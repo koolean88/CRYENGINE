@@ -22,6 +22,12 @@
 #include <CrySystem/ConsoleRegistration.h>
 
 #include <CryPhysics/IPhysics.h>
+#include <CryRenderer/IRenderer.h>
+//#include <DriverD3D.h>
+//#include "../../../CryEngine/RenderDll/XRenderD3D9/DriverD3D.h"
+//#include <CryRenderer/RenderElements/>
+//#include "../../../CryEngine/RenderDll/XRenderD3D9/DriverD3D.h"
+//#include <Cry>
 
 #pragma push_macro("GetObject")
 #undef GetObject
@@ -2820,6 +2826,26 @@ void CVegetationMap::ReloadGeometry()
 
 void CVegetationMap::GenerateBillboards(IConsoleCmdArgs*)
 {
+
+	///////////////
+	//IRenderer::SGraphicsPipelineDescription pipelineDesc;
+	//pipelineDesc.type = EGraphicsPipelineType::Standard;
+	//pipelineDesc.shaderFlags = nRenderingFlags;
+	//pipelineDesc.shaderFlags = SHDF_ALLOWHDR | SHDF_CUBEMAPGEN | SHDF_ZPASS | SHDF_ALLOWPOSTPROCESS | SHDF_BILLBOARDS | SHDF_ALLOW_AO | SHDF_ALLOW_WATER | SHDF_ALLOW_SKY | SHDF_NOASYNC | SHDF_NO_DRAWNEAR | SHDF_NO_DRAWCAUSTICS | SHDF_NO_SHADOWGEN | SHDF_SECONDARY_VIEWPORT | SHDF_FORWARD_MINIMAL;
+
+
+	//CreateGraphicsPipeline
+	//IRenderer::SGraphicsPipelineDescription pipelineDesc;
+	//pipelineDesc.type = EGraphicsPipelineType::Billboard;
+	//pipelineDesc.shaderFlags = SHDF_BILLBOARDS | SHDF_NO_DRAWCAUSTICS | SHDF_NO_SHADOWGEN;// | SHDF_FORWARD_MINIMAL;
+	//pipelineDesc.shaderFlags = SHDF_BILLBOARDS | SHDF_FORWARD_MINIMAL;//SHDF_ALLOWHDR | SHDF_CUBEMAPGEN | SHDF_ZPASS | SHDF_STEREO_LEFT_EYE | SHDF_STEREO_RIGHT_EYE | SHDF_ALLOWPOSTPROCESS | SHDF_BILLBOARDS | SHDF_ALLOW_AO | SHDF_ALLOW_WATER | SHDF_ALLOW_SKY | SHDF_NOASYNC | SHDF_NO_DRAWNEAR | SHDF_NO_DRAWCAUSTICS | SHDF_NO_SHADOWGEN | SHDF_SECONDARY_VIEWPORT | SHDF_FORWARD_MINIMAL | SHDF_ALLOW_RENDER_DEBUG
+	//pipelineDesc.shaderFlags = SHDF_BILLBOARDS;
+
+	//CD3D9Renderer gcpRendD3D;
+	//SGraphicsPipelineKey key = gcpRendD3D->RT_CreateGraphicsPipeline(pipelineDesc);
+	//SGraphicsPipelineKey key = gEnv->pRenderer->CreateGraphicsPipeline(pipelineDesc);
+	////////////////////////
+
 	CVegetationMap* vegMap = GetIEditorImpl()->GetVegetationMap();
 
 	struct SBillboardInfo
@@ -2852,7 +2878,22 @@ void CVegetationMap::GenerateBillboards(IConsoleCmdArgs*)
 		}
 	}
 
-	uint32 nRenderingFlags = SHDF_ALLOWHDR | SHDF_ALLOWPOSTPROCESS;
+	//uint32 nRenderingFlags = SHDF_ALLOWHDR | SHDF_ALLOWPOSTPROCESS;
+	uint32 nRenderingFlags = SHDF_BILLBOARDS | SHDF_ALLOWPOSTPROCESS | SHDF_ALLOWPOSTPROCESS | SHDF_SECONDARY_VIEWPORT | SHDF_FORWARD_MINIMAL | SHDF_ALLOW_RENDER_DEBUG;
+
+	// AAS
+	//IRenderer::SGraphicsPipelineDescription pipelineDesc;
+	//pipelineDesc.type = EGraphicsPipelineType::Standard;
+	//pipelineDesc.shaderFlags = nRenderingFlags;
+	//std::shared_ptr<CGraphicsPipeline> pGraphicsPipeline;
+	//SGraphicsPipelineKey key = gEnv->pRenderer->CreateGraphicsPipeline(pipelineDesc);
+
+	IRenderer::SGraphicsPipelineDescription pipelineDesc;
+	pipelineDesc.type = EGraphicsPipelineType::Billboard;
+	pipelineDesc.shaderFlags = nRenderingFlags;
+
+	SGraphicsPipelineKey key = gEnv->pRenderer->CreateGraphicsPipeline(pipelineDesc);
+	std::shared_ptr<CGraphicsPipeline> pGraphicsPipeline2 = gEnv->pRenderer->FindGraphicsPipeline(key);
 
 	const Vec3 vEye(0, 0, 0);
 	const Vec3 vAt(-1, 0, 0);
@@ -2862,9 +2903,28 @@ void CVegetationMap::GenerateBillboards(IConsoleCmdArgs*)
 	int nSpriteResInt = nSpriteResFinal << 1;
 	int nLine = (int)sqrtf(FAR_TEX_COUNT);
 	int nAtlasRes = nLine * nSpriteResFinal;
-	ITexture* pAtlasD = gEnv->pRenderer->CreateTexture("$BillboardsAtlasD", nAtlasRes, nAtlasRes, 1, NULL, eTF_B8G8R8A8, FT_USAGE_RENDERTARGET);
-	ITexture* pAtlasN = gEnv->pRenderer->CreateTexture("$BillboardsAtlasN", nAtlasRes, nAtlasRes, 1, NULL, eTF_B8G8R8A8, FT_USAGE_RENDERTARGET);
+	//const int const texSize = nAtlasRes * nAtlasRes * (eTF_B8G8R8A8 == eTF_A8 ? 1 : 4);
+
+	//aas create dev tex?
+	//STextureLayout Layout;
+	//CDeviceTexture* pDevTexture = CDeviceTexture::Create(Layout, nullptr);
+	byte* pDstDataD = new byte[nAtlasRes * nAtlasRes * (eTF_B8G8R8A8 == eTF_A8 ? 1 : 4)];
+	//byte pDstDataD[texSize];
+	memset(pDstDataD, 'c', nAtlasRes* nAtlasRes* (eTF_B8G8R8A8 == eTF_A8 ? 1 : 4));
+	if (!pDstDataD)
+		return;
+	byte* pDstDataN = new byte[nAtlasRes * nAtlasRes * (eTF_B8G8R8A8 == eTF_A8 ? 1 : 4)];
+	memset(pDstDataD, 'U', nAtlasRes* nAtlasRes* (eTF_B8G8R8A8 == eTF_A8 ? 1 : 4));
+	if (!pDstDataN)
+		return;
+
+	//////////////
+	//FT_STAGE_READBACK | FT_STAGE_UPLOAD | FT_DONT_RELEASE | FT_DONT_STREAM
+	ITexture* pAtlasD = gEnv->pRenderer->CreateTextureWithDevTexture("$BillboardsAtlasD", nAtlasRes, nAtlasRes, 1, pDstDataD, eTF_B8G8R8A8, FT_USAGE_RENDERTARGET);
+	ITexture* pAtlasN = gEnv->pRenderer->CreateTextureWithDevTexture("$BillboardsAtlasN", nAtlasRes, nAtlasRes, 1, pDstDataD, eTF_B8G8R8A8, FT_USAGE_RENDERTARGET);
 	int nProducedTexturesCounter = 0;
+
+	vegMap->SaveBillboardTIFF("assets/objects/testSaveFromCode_billbAlb1.tif", pAtlasD, "Diffuse_highQ", true);
 
 	for (int i = 0; i < Billboards.size(); i++)
 	{
@@ -2891,11 +2951,11 @@ void CVegetationMap::GenerateBillboards(IConsoleCmdArgs*)
 			tmpCam.SetMatrix(Matrix34(matRot, Vec3(0, 0, 0)));
 			tmpCam.SetFrustum(nSpriteResInt, nSpriteResInt, fFOV, max(0.1f, fDrawDist - fRadiusHors), fDrawDist + fRadiusHors);
 
-			IRenderer::SGraphicsPipelineDescription pipelineDesc;
-			pipelineDesc.type = EGraphicsPipelineType::Standard;
-			pipelineDesc.shaderFlags = nRenderingFlags;
 
-			SRenderingPassInfo passInfo = SRenderingPassInfo::CreateBillBoardGenPassRenderingInfo(passInfo.GetGraphicsPipelineKey(), tmpCam, nRenderingFlags);
+			//SRenderingPassInfo passInfo = SRenderingPassInfo::CreateBillBoardGenPassRenderingInfo(passInfo.GetGraphicsPipelineKey(), tmpCam, nRenderingFlags);
+			SRenderingPassInfo passInfo = SRenderingPassInfo::CreateBillBoardGenPassRenderingInfo(key, tmpCam, nRenderingFlags);
+			//SRenderingPassInfo passInfo = SRenderingPassInfo::CreateBillBoardGenPassRenderingInfo(key, tmpCam, nRenderingFlags);
+			
 			IRenderView* pView = passInfo.GetIRenderView();
 			pView->SetCameras(&tmpCam, 1);
 
@@ -2920,6 +2980,7 @@ void CVegetationMap::GenerateBillboards(IConsoleCmdArgs*)
 			rParams.lodValue = CLodValue(0);
 			pObj->Render(rParams, passInfo);
 
+			//pView->SwitchUsageMode
 			pView->SwitchUsageMode(IRenderView::eUsageModeWritingDone);
 
 			gEnv->pRenderer->EF_EndEf3D(0, 0, passInfo, nRenderingFlags);
@@ -2930,11 +2991,14 @@ void CVegetationMap::GenerateBillboards(IConsoleCmdArgs*)
 			rcDst.w = nSpriteResFinal;
 			rcDst.h = nSpriteResFinal;
 
+
 			std::shared_ptr<CGraphicsPipeline> pGraphicsPipeline = gEnv->pRenderer->FindGraphicsPipeline(passInfo.GetGraphicsPipelineKey());
+			vegMap->SaveBillboardTIFF("assets/objects/testSaveFromCode_billbAlb2.tif", pAtlasD, "Diffuse_highQ", true);
 			if (!gEnv->pRenderer->StoreGBufferToAtlas(rcDst, nSpriteResInt, nSpriteResInt, nSpriteResFinal, nSpriteResFinal, pAtlasD, pAtlasN, pGraphicsPipeline.get()))
 			{
 				assert(0);
 			}
+			vegMap->SaveBillboardTIFF("assets/objects/testSaveFromCode_billbAlb3.tif", pAtlasD, "Diffuse_highQ", true);
 		}
 		const char* szName = pObj->GetFilePath();
 
@@ -2948,6 +3012,12 @@ void CVegetationMap::GenerateBillboards(IConsoleCmdArgs*)
 		CString nameNormal = fullFilename + "_billbNorm.tif";
 		CFileUtil::CreateDirectory(fullFolder);
 
+		//aas
+		//CD3D9Renderer* r = gcpRendD3D;
+		//r->RT_StoreTextureToFile(fullFilename + "_billbAlb.png", pAtlasD);
+		//gEnv->pRenderer->
+		////
+
 		vegMap->SaveBillboardTIFF(nameAlbedo, pAtlasD, "Diffuse_highQ", true);
 		vegMap->SaveBillboardTIFF(nameNormal, pAtlasN, "Normalmap_highQ", false);
 
@@ -2957,6 +3027,7 @@ void CVegetationMap::GenerateBillboards(IConsoleCmdArgs*)
 	SAFE_RELEASE(pAtlasN);
 
 	gEnv->pLog->Log("%d billboard textures produced", nProducedTexturesCounter);
+	//gEnv->pRenderer->DeleteGraphicsPipeline(key);
 }
 
 bool CVegetationMap::SaveBillboardTIFF(const CString& fileName, ITexture* pTexture, const char* szPreset, bool bConvertToSRGB)
