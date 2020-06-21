@@ -1751,7 +1751,18 @@ void CStatObj::CheckCreateBillboardMaterial()
 	// create billboard material and cgf
 	if (nBillboardTexturesFound == 2)
 	{
-		m_pBillboardMaterial = GetMatMan()->LoadMaterial("%ENGINE%/EngineAssets/Materials/billboard_default", false);
+		string billboart_mat = string(PathUtil::GetGameFolder() + "/Materials/billboard_default");
+		
+		if ( gEnv->pCryPak->IsFileExist(billboart_mat) )
+		{
+			m_pBillboardMaterial = GetMatMan()->LoadMaterial(billboart_mat, false);
+		}
+		else
+		{
+			m_pBillboardMaterial = GetMatMan()->LoadMaterial("%ENGINE%/EngineAssets/Materials/billboard_default", false);
+			m_pBillboardMaterial = GetMatMan()->LoadMaterial(billboart_mat, false);
+		}
+		
 
 		if (m_pBillboardMaterial)
 		{

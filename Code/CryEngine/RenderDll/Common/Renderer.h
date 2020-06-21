@@ -1066,6 +1066,7 @@ public:
 	virtual void                   EF_RefreshTextures() override;
 	virtual int                    EF_LoadLightmap(const char* nameTex) override;
 	virtual DynArray<uint16_t>     EF_RenderEnvironmentCubeHDR(int size, const Vec3& Pos) override;
+	virtual DynArray<uint16_t>     EF_RenderBillboard(int size, IStatObj* pObj, bool isNormalMap = false) override;
 	virtual bool                   WriteTIFToDisk(const void* pData, int width, int height, int bytesPerChannel, int numChannels, bool bFloat, const char* szPreset, const char* szFileName) override;
 	virtual ITexture*              EF_GetTextureByID(int Id) override;
 	virtual ITexture*              EF_GetTextureByName(const char* name, uint32 flags = 0) override;

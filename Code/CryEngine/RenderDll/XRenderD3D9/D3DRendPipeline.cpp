@@ -577,7 +577,8 @@ void CD3D9Renderer::RT_RenderScene(CRenderView* pRenderView)
 	const CTimeValue Time = iTimer->GetAsyncTime();
 
 	// Only Billboard rendering doesn't use CRenderOutput
-	if (!pRenderView->GetRenderOutput() && !pRenderView->IsBillboardGenView())
+	//eViewType_Default
+	if (!pRenderView->GetRenderOutput())
 	{
 		pRenderView->AssignRenderOutput(GetActiveDisplayContext()->GetRenderOutput());
 		pRenderView->GetRenderOutput()->BeginRendering(pRenderView);

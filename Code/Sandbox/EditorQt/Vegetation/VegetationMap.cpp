@@ -23,6 +23,12 @@
 
 #include <CryPhysics/IPhysics.h>
 #include <CryRenderer/IRenderer.h>
+#include <PlaygroundDockable.h>
+//#include "../../RenderDll/XRenderD3D9/c"
+//#include <>
+
+//#include "../../../CryEngine/RenderDll/Common/Renderer.h"
+//#include <renderdll>
 //#include <DriverD3D.h>
 //#include "../../../CryEngine/RenderDll/XRenderD3D9/DriverD3D.h"
 //#include <CryRenderer/RenderElements/>
@@ -414,6 +420,8 @@ CVegetationMap::CVegetationMap()
 	srand(GetTickCount());
 
 	REGISTER_COMMAND("ed_GenerateBillboardTextures", GenerateBillboards, 0, "Generate billboard textures for all level vegetations having UseSprites flag enabled. Textures are stored into <Objects> folder");
+	REGISTER_COMMAND("ed_GenerateBillboardTextures2", GenerateBillboards2, 0, "Generate billboard textures for all level vegetations having UseSprites flag enabled. Textures are stored into <Objects> folder");
+
 }
 
 CVegetationMap::~CVegetationMap()
@@ -2824,6 +2832,304 @@ void CVegetationMap::ReloadGeometry()
 	}
 }
 
+void CVegetationMap::GenerateBillboards2(IConsoleCmdArgs*)
+{
+	CVegetationMap* vegMap = GetIEditorImpl()->GetVegetationMap();
+
+	struct SBillboardInfo
+	{
+		IStatObj* pModel;
+		float     fDistRatio;
+	};
+
+	std::vector<SBillboardInfo> Billboards;
+	for (int i = 0; i < vegMap->GetObjectCount(); i++)
+	{
+		CVegetationObject* pVO = vegMap->GetObject(i);
+		if (!pVO->IsUseSprites())
+			continue;
+
+		IStatObj* pObject = pVO->GetObject();
+		int j = 0;
+		for (; j < Billboards.size(); j++)
+		{
+			SBillboardInfo& BI = Billboards[j];
+			if (BI.pModel == pObject)
+				continue;
+		}
+		if (j == Billboards.size())
+		{
+			SBillboardInfo B;
+			B.pModel = pObject;
+			B.fDistRatio = pVO->mv_SpriteDistRatio;
+			Billboards.push_back(B);
+		}
+	}
+
+	//int nSpriteResFinal = 128;
+	//int nSpriteResInt = nSpriteResFinal << 1;
+	//int nLine = (int)sqrtf(FAR_TEX_COUNT);
+	//int nAtlasRes = nLine * nSpriteResFinal;
+
+	int nProducedTexturesCounter = 0;
+	for (int i = 0; i < Billboards.size(); i++)
+	{
+		SBillboardInfo& BI = Billboards[i];
+		IStatObj* pObj = BI.pModel;
+
+		gEnv->pLog->Log("Generating billboards for %s", pObj->GetFilePath());
+
+		//CCamera tmpCam = GetISystem()->GetViewCamera();
+		//pObj->GetMaterial()->ForceTexturesLoading(nAtlasRes);
+
+		//gEnv->pRenderer->EF_RenderBillboard(nSpriteResFinal, pObj);
+
+		///
+		for (int texture = 0; texture < 2; ++texture)
+		{
+			bool generateNormlMap = false;
+			if (texture == 0)
+			{
+				generateNormlMap = false;
+			}
+			else if (texture == 1)
+			{
+				generateNormlMap = true;
+			}
+			int nDstSize = 256;
+			const auto nSrcSize = nDstSize * 4; // Render 16x bigger cubemap (4x4) - 16x SSAA
+			const auto srcPitch = nSrcSize * 4;
+			const auto dstPitch = nSrcSize;
+			const auto srcSideSize = nSrcSize * srcPitch;
+			const auto sides = FAR_TEX_COUNT;
+
+			const auto& vecData = gEnv->pRenderer->EF_RenderBillboard(nSrcSize, pObj, generateNormlMap);
+			//CRY_ASSERT_MESSAGE(vecData.size() == srcSideSize * sides, "TIFF data does not match expected size");
+			//if (vecData.size() < srcSideSize * sides)
+			//	return;
+
+			// todo: such big downsampling should be on gpu
+
+			// save data to tiff
+			// resample the image at the original size
+			auto sqrRootSides = (int)sqrtf(FAR_TEX_COUNT);
+			//int sideImg = nDstSize * sqrRootSides;
+			int sideModOcr = 0;
+			CWordImage img;
+			img.Allocate(nSrcSize * sqrRootSides, nDstSize * sqrRootSides);
+			for (int side = 0; side < sides; ++side)
+			{
+				int xSideMod = side % 4;
+				//if (side != 0 && side % 4 == 0)
+				//{
+				//	xSide = 0;
+				//}
+				if (side != 0 && side % 4 == 0)
+				{
+					sideModOcr++;
+				}
+				for (uint32 y = 0; y < nDstSize; ++y)
+				{
+
+					int yDst = y;
+
+					int yRow = sideModOcr * nDstSize;
+					yDst = y + yRow;
+					//* max(1, (sideModOcr * dstPitch))
+					CryHalf4* pSrcSide = (CryHalf4*)&vecData[side * srcSideSize];
+					//gEnv->pLog->Log("Side %i, xSide, yDst %i:%i", side, xSideMod* nDstSize, yDst);
+					CryHalf4* pDst = (CryHalf4*)&img.ValueAt(xSideMod * dstPitch, yDst);
+					for (uint32 x = 0; x < nDstSize; ++x)
+					{
+						Vec4 cResampledColor(0.f, 0.f, 0.f, 0.f);
+
+						// resample the image at the original size
+						for (uint32 yres = 0; yres < 4; ++yres)
+						{
+							for (uint32 xres = 0; xres < 4; ++xres)
+							{
+								const CryHalf4& pSrc = pSrcSide[(y * 4 + yres) * nSrcSize + (x * 4 + xres)];
+								cResampledColor += Vec4(CryConvertHalfToFloat(pSrc.x), CryConvertHalfToFloat(pSrc.y), CryConvertHalfToFloat(pSrc.z), CryConvertHalfToFloat(pSrc.w));
+							}
+						}
+
+						//if (cResampledColor.x > 0.5f || cResampledColor.y > 0.5f || cResampledColor.z > 0.5f)
+						//{
+						//	gEnv->pLog->Log("cResampledColor more than 50.0f %f %f %f", cResampledColor.x, cResampledColor.y, cResampledColor.z);
+
+
+						//	float r = cResampledColor.x;
+						//	float g = cResampledColor.y;
+						//	float b = cResampledColor.z;
+						//	cResampledColor.x = (float)(powf((float)r / 255.0f, 1.0f / 2.2f) * 255.0f);
+						//	cResampledColor.y = (float)(powf((float)g / 255.0f, 1.0f / 2.2f) * 255.0f);
+						//	cResampledColor.z = (float)(powf((float)b / 255.0f, 1.0f / 2.2f) * 255.0f);
+						//	gEnv->pLog->Log("cResampledColor converted %f %f %f", cResampledColor.x, cResampledColor.y, cResampledColor.z);
+						//	cResampledColor.x = r;
+						//	cResampledColor.y = g;
+						//	cResampledColor.z = b;
+						//}
+
+
+						//if (cResampledColor.x > 5.0f || cResampledColor.y > 5.0f || cResampledColor.z > 5.0f)
+						//{
+						//	gEnv->pLog->Log("cResampledColor converted1 %f %f %f", cResampledColor.x, cResampledColor.y, cResampledColor.z);
+						//	cResampledColor /= 16.f;
+						//	gEnv->pLog->Log("cResampledColor converted2 %f %f %f", cResampledColor.x, cResampledColor.y, cResampledColor.z);
+						//}
+						//else
+						//{
+						//	cResampledColor /= 16.f;
+						//}
+
+						if (!generateNormlMap)
+						{
+							float r = cResampledColor.x;
+							float g = cResampledColor.y;
+							float b = cResampledColor.z;
+							cResampledColor.x = (float)(powf((float)r / 16.0f, 1.0f / 1.8f) * 16.0f);
+							cResampledColor.y = (float)(powf((float)g / 16.0f, 1.0f / 1.8f) * 16.0f);
+							cResampledColor.z = (float)(powf((float)b / 16.0f, 1.0f / 1.8f) * 16.0f);
+						}
+						//else
+						//{
+						//	float r = cResampledColor.x;
+						//	float g = cResampledColor.y;
+						//	float b = cResampledColor.z;
+						//	cResampledColor.z = (float)(powf((float)r / 16.0f, 1.0f / 2.2f) * 16.0f);
+						//	cResampledColor.y = (float)(powf((float)g / 16.0f, 1.0f / 2.2f) * 16.0f);
+						//	cResampledColor.x = (float)(powf((float)b / 16.0f, 1.0f / 2.2f) * 16.0f);
+						//}
+
+						cResampledColor /= 16.f;
+
+						//float r = cResampledColor.x;
+						//float g = cResampledColor.y;
+						//float b = cResampledColor.z;
+						//cResampledColor.x = (float)(powf((float)r / 255.0f, 1.0f / 2.2f) * 255.0f);
+						//cResampledColor.y = (float)(powf((float)g / 255.0f, 1.0f / 2.2f) * 255.0f);
+						//cResampledColor.z = (float)(powf((float)b / 255.0f, 1.0f / 2.2f) * 255.0f);
+
+
+						//if (!generateNormlMap) 
+						//{
+						//	cResampledColor.Normalize();
+						//}
+						//if (cResampledColor.x > 0.5f || cResampledColor.y > 0.5f || cResampledColor.z > 0.5f)
+						//{
+						//	auto cryhlfT = CryHalf4(cResampledColor.x, cResampledColor.y, cResampledColor.z, 1.0f);
+						//	gEnv->pLog->Log("cResampledColor converted2 %hu %hu %hu", cryhlfT.x, cryhlfT.y, cryhlfT.z);
+						//}
+						
+
+						
+						// Force alpha to 1.0, render output might contain other values which will only serve to corrupt the TIFF.
+						if (generateNormlMap)
+						{
+							if (cResampledColor.x < 0.0f || cResampledColor.y < 0.0f || cResampledColor.z < 0.0f)
+							{
+								gEnv->pLog->Log("cResampledColor less than 0.0f %f %f %f", cResampledColor.x, cResampledColor.y, cResampledColor.z);
+							}
+							*pDst++ = CryHalf4(cResampledColor.x, cResampledColor.y, cResampledColor.z, 1.0f);
+						}
+						else
+						{
+							*pDst++ = CryHalf4(cResampledColor.x, cResampledColor.y, cResampledColor.z, (cResampledColor.x < 0.07f && cResampledColor.y < 0.07f && cResampledColor.z < 0.07f && cResampledColor.w < 1.0f && !generateNormlMap) ? cResampledColor.w : 1.0f);
+							//*pDst++ = CryHalf4(cResampledColor.x, cResampledColor.y, cResampledColor.z, 1.0f);
+							
+
+						}
+
+					}
+				}
+			}
+		
+			//if (!generateNormlMap)
+			//{
+			//	// covert to srgb
+			//	unsigned short* pSrc = img.GetData();
+			//	for (int i = 0; i < nDstSize * sqrRootSides * nDstSize * sqrRootSides; i++)
+			//	{
+			//		byte r = pSrc[0];
+			//		byte g = pSrc[1];
+			//		byte b = pSrc[2];
+			//		pSrc[2] = (byte)(powf((float)r / 255.0f, 1.0f / 2.2f) * 255.0f);
+			//		pSrc[1] = (byte)(powf((float)g / 255.0f, 1.0f / 2.2f) * 255.0f);
+			//		pSrc[0] = (byte)(powf((float)b / 255.0f, 1.0f / 2.2f) * 255.0f);
+
+			//		pSrc += 4;
+			//	}
+			//}
+
+
+
+			//img.Allocate(nSrcSize* sides, nDstSize);
+			//for (int side = 0; side < sides; ++side)
+			//{
+			//	for (uint32 y = 0; y < nDstSize; ++y)
+			//	{
+			//		CryHalf4* pSrcSide = (CryHalf4*)&vecData[side * srcSideSize];
+			//		CryHalf4* pDst = (CryHalf4*)&img.ValueAt(side * dstPitch, y);
+			//		for (uint32 x = 0; x < nDstSize; ++x)
+			//		{
+			//			Vec4 cResampledColor(0.f, 0.f, 0.f, 0.f);
+
+			//			// resample the image at the original size
+			//			for (uint32 yres = 0; yres < 4; ++yres)
+			//			{
+			//				for (uint32 xres = 0; xres < 4; ++xres)
+			//				{
+			//					const CryHalf4& pSrc = pSrcSide[(y * 4 + yres) * nSrcSize + (x * 4 + xres)];
+			//					cResampledColor += Vec4(CryConvertHalfToFloat(pSrc.x), CryConvertHalfToFloat(pSrc.y), CryConvertHalfToFloat(pSrc.z), CryConvertHalfToFloat(pSrc.w));
+			//				}
+			//			}
+
+			//			cResampledColor /= 16.f;
+
+			//			// Force alpha to 1.0, render output might contain other values which will only serve to corrupt the TIFF.
+			//			*pDst++ = CryHalf4(cResampledColor.x, cResampledColor.y, cResampledColor.z, (cResampledColor.x == 0.0f && cResampledColor.y == 0.0f && cResampledColor.z == 0.0f && cResampledColor.w < 1.0f) ? cResampledColor.w : 1.0f);
+			//		}
+			//	}
+			//}
+
+			assert(IsHeapValid());
+
+			///
+			const char* szName = pObj->GetFilePath();
+
+			CString fileName = PathUtil::GetFileName(szName);
+			CString pathName = PathUtil::GetPathWithoutFilename(szName);
+			CString fullGameFolder = PathUtil::AddSlash(PathUtil::GetGameFolder());
+
+			CString fullFolder = fullGameFolder + pathName;
+			CString fullFilename = fullFolder + fileName;
+			CString nameAlbedo = fullFilename + "_billbAlb.tif";
+			CString nameNormal = fullFilename + "_billbNorm.tif";
+			CFileUtil::CreateDirectory(fullFolder);
+			///
+
+			CImageTIF tif;
+			if (!generateNormlMap) 
+			{
+				const bool res = tif.SaveRAW((const char*)nameAlbedo, img.GetData(), nDstSize * sqrRootSides, nDstSize * sqrRootSides, 2, 4, true, "AlbedoWithOpacityAAS");
+				assert(res);
+			}
+			else
+			{
+				const bool res = tif.SaveRAW((const char*)nameNormal, img.GetData(), nDstSize * sqrRootSides, nDstSize * sqrRootSides, 2, 4, true, "NormalsWithSmoothnessAAS"); //"NormalsWithSmoothness"
+				assert(res);
+			}
+			
+			CryLog("File saved: %s", (const char*)nameAlbedo);
+		}
+		
+		///
+		nProducedTexturesCounter += 2;
+
+	}
+	gEnv->pLog->Log("%d billboard textures produced", nProducedTexturesCounter);
+}
+
 void CVegetationMap::GenerateBillboards(IConsoleCmdArgs*)
 {
 
@@ -2878,22 +3184,52 @@ void CVegetationMap::GenerateBillboards(IConsoleCmdArgs*)
 		}
 	}
 
-	//uint32 nRenderingFlags = SHDF_ALLOWHDR | SHDF_ALLOWPOSTPROCESS;
-	uint32 nRenderingFlags = SHDF_BILLBOARDS | SHDF_ALLOWPOSTPROCESS | SHDF_ALLOWPOSTPROCESS | SHDF_SECONDARY_VIEWPORT | SHDF_FORWARD_MINIMAL | SHDF_ALLOW_RENDER_DEBUG;
+	////uint32 nRenderingFlags = SHDF_ALLOWHDR | SHDF_ALLOWPOSTPROCESS;
+	//uint32 nRenderingFlags = SHDF_BILLBOARDS | SHDF_ALLOWPOSTPROCESS | SHDF_ALLOWPOSTPROCESS | SHDF_SECONDARY_VIEWPORT | SHDF_FORWARD_MINIMAL | SHDF_ALLOW_RENDER_DEBUG;
 
-	// AAS
+	//// AAS
+	////IRenderer::SGraphicsPipelineDescription pipelineDesc;
+	////pipelineDesc.type = EGraphicsPipelineType::Standard;
+	////pipelineDesc.shaderFlags = nRenderingFlags;
+	////std::shared_ptr<CGraphicsPipeline> pGraphicsPipeline;
+	////SGraphicsPipelineKey key = gEnv->pRenderer->CreateGraphicsPipeline(pipelineDesc);
+
 	//IRenderer::SGraphicsPipelineDescription pipelineDesc;
-	//pipelineDesc.type = EGraphicsPipelineType::Standard;
+	//pipelineDesc.type = EGraphicsPipelineType::Minimum;
 	//pipelineDesc.shaderFlags = nRenderingFlags;
-	//std::shared_ptr<CGraphicsPipeline> pGraphicsPipeline;
+
 	//SGraphicsPipelineKey key = gEnv->pRenderer->CreateGraphicsPipeline(pipelineDesc);
+	//std::shared_ptr<CGraphicsPipeline> pGraphicsPipeline2 = gEnv->pRenderer->FindGraphicsPipeline(key);
+
+
+	//// AAS
+	IRenderer::SDisplayContextDescription desc;
+
+	IPane* playground = GetIEditor()->FindDockable("Playground");
+	//reinterpret_cast<HWND>(playground->GetWidget()->winId());
+		//		desc.handle = reinterpret_cast<HWND>(winId());
+	CPlaygroundDockable* playgroundCasted = reinterpret_cast<CPlaygroundDockable*>(playground->GetWidget());
+	desc.handle = reinterpret_cast<HWND>(playgroundCasted->getPreviewWinId());
+	//getPreviewWinId()
+	desc.type = IRenderer::eViewportType_Secondary;
+	desc.clearColor = ColorF(0.0f, 0.0f, 0.0f, 1.0f);
+	desc.renderFlags = FRT_CLEAR_COLOR | FRT_CLEAR_DEPTH | FRT_TEMPORARY_DEPTH;
+	desc.screenResolution.x = 128;
+	desc.screenResolution.y = 128;
+
+	SDisplayContextKey dCKey = gEnv->pRenderer->CreateSwapChainBackedContext(desc);
 
 	IRenderer::SGraphicsPipelineDescription pipelineDesc;
-	pipelineDesc.type = EGraphicsPipelineType::Billboard;
-	pipelineDesc.shaderFlags = nRenderingFlags;
+	//pipelineDesc.type = EGraphicsPipelineType::Billboard;
+	pipelineDesc.type = EGraphicsPipelineType::Minimum;
+	//pipelineDesc.shaderFlags = SHDF_ZPASS | SHDF_NOASYNC | SHDF_BILLBOARDS | SHDF_NO_DRAWCAUSTICS | SHDF_NO_SHADOWGEN | SHDF_ALLOWHDR | SHDF_SECONDARY_VIEWPORT | SHDF_FORWARD_MINIMAL;
+	//pipelineDesc.shaderFlags = SHDF_SECONDARY_VIEWPORT | SHDF_ALLOWHDR | SHDF_FORWARD_MINIMAL;
+	pipelineDesc.shaderFlags = SHDF_SECONDARY_VIEWPORT | SHDF_ALLOWHDR;
 
 	SGraphicsPipelineKey key = gEnv->pRenderer->CreateGraphicsPipeline(pipelineDesc);
-	std::shared_ptr<CGraphicsPipeline> pGraphicsPipeline2 = gEnv->pRenderer->FindGraphicsPipeline(key);
+
+
+	///////
 
 	const Vec3 vEye(0, 0, 0);
 	const Vec3 vAt(-1, 0, 0);
@@ -2914,17 +3250,18 @@ void CVegetationMap::GenerateBillboards(IConsoleCmdArgs*)
 	if (!pDstDataD)
 		return;
 	byte* pDstDataN = new byte[nAtlasRes * nAtlasRes * (eTF_B8G8R8A8 == eTF_A8 ? 1 : 4)];
-	memset(pDstDataD, 'U', nAtlasRes* nAtlasRes* (eTF_B8G8R8A8 == eTF_A8 ? 1 : 4));
+	memset(pDstDataN, 'U', nAtlasRes* nAtlasRes* (eTF_B8G8R8A8 == eTF_A8 ? 1 : 4));
 	if (!pDstDataN)
 		return;
 
 	//////////////
 	//FT_STAGE_READBACK | FT_STAGE_UPLOAD | FT_DONT_RELEASE | FT_DONT_STREAM
-	ITexture* pAtlasD = gEnv->pRenderer->CreateTextureWithDevTexture("$BillboardsAtlasD", nAtlasRes, nAtlasRes, 1, pDstDataD, eTF_B8G8R8A8, FT_USAGE_RENDERTARGET);
-	ITexture* pAtlasN = gEnv->pRenderer->CreateTextureWithDevTexture("$BillboardsAtlasN", nAtlasRes, nAtlasRes, 1, pDstDataD, eTF_B8G8R8A8, FT_USAGE_RENDERTARGET);
+	//FT_USAGE_RENDERTARGET
+	ITexture* pAtlasD = gEnv->pRenderer->CreateTexture("$BillboardsAtlasD", nAtlasRes, nAtlasRes, 1, pDstDataD, eTF_B8G8R8A8, FT_STAGE_READBACK | FT_STAGE_UPLOAD | FT_DONT_RELEASE);
+	ITexture* pAtlasN = gEnv->pRenderer->CreateTexture("$BillboardsAtlasN", nAtlasRes, nAtlasRes, 1, pDstDataN, eTF_B8G8R8A8, FT_STAGE_READBACK | FT_STAGE_UPLOAD | FT_DONT_RELEASE);
 	int nProducedTexturesCounter = 0;
 
-	vegMap->SaveBillboardTIFF("assets/objects/testSaveFromCode_billbAlb1.tif", pAtlasD, "Diffuse_highQ", true);
+	//vegMap->SaveBillboardTIFF("assets/objects/testSaveFromCode_billbAlb1.tif", pAtlasD, "Diffuse_highQ", true);
 
 	for (int i = 0; i < Billboards.size(); i++)
 	{
@@ -2934,6 +3271,7 @@ void CVegetationMap::GenerateBillboards(IConsoleCmdArgs*)
 		gEnv->pLog->Log("Generating billboards for %s", pObj->GetFilePath());
 
 		CCamera tmpCam = GetISystem()->GetViewCamera();
+		pObj->GetMaterial()->ForceTexturesLoading(nAtlasRes);
 
 		for (int j = 0; j < FAR_TEX_COUNT; j++)
 		{
@@ -2951,16 +3289,50 @@ void CVegetationMap::GenerateBillboards(IConsoleCmdArgs*)
 			tmpCam.SetMatrix(Matrix34(matRot, Vec3(0, 0, 0)));
 			tmpCam.SetFrustum(nSpriteResInt, nSpriteResInt, fFOV, max(0.1f, fDrawDist - fRadiusHors), fDrawDist + fRadiusHors);
 
-
+			//int r_DebugGBuffer = gEnv->pConsole->GetCVar("r_DebugGBuffer")->GetIVal();
+			//gEnv->pConsole->GetCVar("r_DebugGBuffer")->Set((int)1);
 			//SRenderingPassInfo passInfo = SRenderingPassInfo::CreateBillBoardGenPassRenderingInfo(passInfo.GetGraphicsPipelineKey(), tmpCam, nRenderingFlags);
-			SRenderingPassInfo passInfo = SRenderingPassInfo::CreateBillBoardGenPassRenderingInfo(key, tmpCam, nRenderingFlags);
-			//SRenderingPassInfo passInfo = SRenderingPassInfo::CreateBillBoardGenPassRenderingInfo(key, tmpCam, nRenderingFlags);
+			//SRenderingPassInfo passInfo = SRenderingPassInfo::CreateBillBoardGenPassRenderingInfo(key, tmpCam, pipelineDesc.shaderFlags);
+			//SRenderingPassInfo passInfo = SRenderingPassInfo::CreateGeneralPassRenderingInfo(key, tmpCam, SRenderingPassInfo::DEFAULT_FLAGS, true, dCKey);
+			//CTexture* pTexture = CTexture::GetOrCreateRenderTarget("$aasTexture", 128, 128, ColorF(0.0f, 0.0f, 0.0f, 1.0f), eTT_2D, renderTargetFlags, eTF_R8G8B8A8);
+			//CTexture* pDepthTexture = CTexture::GetOrCreateRenderTarget("$aaspDepthTexture", 128, 128, ColorF(0.0f, 0.0f, 0.0f, 1.0f), eTT_2D, renderTargetFlags, eTF_R8G8B8A8);
+			//SRenderingPassInfo passInfo = SRenderingPassInfo::CreateBillBoardGenPassRenderingInfo(key, tmpCam, dCKey);
+
+			gEnv->pRenderer->BeginFrame(dCKey, key);
+			SRenderingPassInfo passInfo = SRenderingPassInfo::CreateGeneralPassRenderingInfo(key, tmpCam, SRenderingPassInfo::DEFAULT_FLAGS, true, dCKey);
 			
+			//aas
+			//passInfo.
+			// Flush pending commands to make sure SShaderItem::m_nPreprocessFlags is updated
+			//gEnv->pRenderer->FlushRTCommands(true, true, true);
+
 			IRenderView* pView = passInfo.GetIRenderView();
+			//pView->aasSetColorAndDepthTarget(nSpriteResInt, nSpriteResInt, true);
+
 			pView->SetCameras(&tmpCam, 1);
 
+
+			//m_pRenderOutput
+
+			//aas
+			//byte* pRenderView = new byte[nAtlasRes * nAtlasRes * (eTF_B8G8R8A8 == eTF_A8 ? 1 : 4)];
+			////byte pDstDataD[texSize];
+			//memset(pDstDataD, 'c', nAtlasRes * nAtlasRes * (eTF_B8G8R8A8 == eTF_A8 ? 1 : 4));
+			//if (!pDstDataD)
+			//	return;
+
+			
 			gEnv->pRenderer->EF_StartEf(passInfo);
 
+			//aas
+			//SRenderLight light;
+			//const float lightColor = 1.0f;
+			//light.m_Flags |= DLF_SUN | DLF_DIRECTIONAL;
+			//light.SetRadius(10000);
+			//light.SetLightColor(ColorF(lightColor, lightColor, lightColor, lightColor));
+			//light.SetPosition(Vec3(100, 100, 100));
+			//gEnv->pRenderer->EF_ADDDlight(&light, passInfo);
+			///
 			Matrix34A matTrans;
 			matTrans.SetIdentity();
 			matTrans.SetTranslation(Vec3(-fDrawDist, 0, 0));
@@ -2978,27 +3350,55 @@ void CVegetationMap::GenerateBillboards(IConsoleCmdArgs*)
 			SRendParams rParams;
 			rParams.pMatrix = &InstMatrix;
 			rParams.lodValue = CLodValue(0);
+			//aas
+			rParams.AmbientColor = ColorF(1.0f, 1.0f, 0.5f, 0.5f);
+			//rParams.dwFObjFlags = FOB_TRANS_MASK /*| FOB_GLOBAL_ILLUMINATION*/ | FOB_NO_FOG /*| FOB_ZPREPASS*/;
+			rParams.pMaterial = pObj->GetMaterial();
+			///
 			pObj->Render(rParams, passInfo);
 
 			//pView->SwitchUsageMode
 			pView->SwitchUsageMode(IRenderView::eUsageModeWritingDone);
+			//gEnv->pRenderer->ScreenShot("assets/objects/partAtlas1." + CryStringUtils::toString(j) + ".jpg", dCKey);
+			gEnv->pRenderer->EF_EndEf3D(-1, -1, passInfo, pipelineDesc.shaderFlags);
+			//gEnv->pRenderer->ScreenShot("assets/objects/partAtlas2." + CryStringUtils::toString(j) + ".jpg", dCKey);
+			//std::shared_ptr<CGraphicsPipeline> pActiveGraphicsPipeline = pView->GetGraphicsPipeline();
+			
 
-			gEnv->pRenderer->EF_EndEf3D(0, 0, passInfo, nRenderingFlags);
+		
+
+			//pGraphicsPipeline->Execute();
+			//CRenderer* crenderer = (CRenderer*)gEnv->pRenderer;
+			//crenderer->RT_RenderScene(passInfo.GetRenderView());
+			//gEnv->pRenderer->RT_RenderScene(passInfo.GetRenderView());
+			//CD3D9Renderer* gcpRendD3D;
 
 			RectI rcDst;
 			rcDst.x = (j % nLine) * nSpriteResFinal;
 			rcDst.y = (j / nLine) * nSpriteResFinal;
 			rcDst.w = nSpriteResFinal;
 			rcDst.h = nSpriteResFinal;
+			//aas
+			gEnv->pRenderer->RenderDebug(false);
+			gEnv->pRenderer->EndFrame();
 
 
-			std::shared_ptr<CGraphicsPipeline> pGraphicsPipeline = gEnv->pRenderer->FindGraphicsPipeline(passInfo.GetGraphicsPipelineKey());
-			vegMap->SaveBillboardTIFF("assets/objects/testSaveFromCode_billbAlb2.tif", pAtlasD, "Diffuse_highQ", true);
+
+			//Render();
+			
+			//QDir().mkpath(QtUtil::ToQString(PathUtil::GetPathWithoutFilename(outFile)));
+			//gEnv->pRenderer->ScreenShot("assets/objects/displContxt1." + CryStringUtils::toString(j) + ".jpg", dCKey);
+			///
+			//std::shared_ptr<CGraphicsPipeline> pGraphicsPipeline = gEnv->pRenderer->FindGraphicsPipeline(key);
+			//vegMap->SaveBillboardTIFF("assets/objects/testSaveFromCode_billbAlb2.tif", pAtlasD, "Diffuse_highQ", true);
+			std::shared_ptr<CGraphicsPipeline> pGraphicsPipeline = gEnv->pRenderer->FindGraphicsPipeline(key);
 			if (!gEnv->pRenderer->StoreGBufferToAtlas(rcDst, nSpriteResInt, nSpriteResInt, nSpriteResFinal, nSpriteResFinal, pAtlasD, pAtlasN, pGraphicsPipeline.get()))
 			{
 				assert(0);
 			}
-			vegMap->SaveBillboardTIFF("assets/objects/testSaveFromCode_billbAlb3.tif", pAtlasD, "Diffuse_highQ", true);
+			//vegMap->SaveBillboardTIFF("assets/objects/testSaveFromCode_billbAlb3.tif", pAtlasD, "Diffuse_highQ", true);
+
+			//gEnv->pConsole->GetCVar("r_DebugGBuffer")->Set((int)r_DebugGBuffer);
 		}
 		const char* szName = pObj->GetFilePath();
 

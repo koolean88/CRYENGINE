@@ -9,6 +9,7 @@
 class CShadowMapStage;
 class CSceneGBufferStage;
 class CSceneForwardStage;
+class CSkyStage;
 class CAutoExposureStage;
 class CBloomStage;
 class CHeightMapAOStage;
@@ -19,7 +20,6 @@ class CVolumetricFogStage;
 class CFogStage;
 class CVolumetricCloudsStage;
 class CWaterStage;
-class CSkyStage;
 class CWaterRipplesStage;
 class CMotionBlurStage;
 class CDepthOfFieldStage;
@@ -33,13 +33,14 @@ class CComputeSkinningStage;
 class CComputeParticlesStage;
 class CTiledLightVolumesStage;
 class CTiledShadingStage;
+class CColorGradingStage;
 class CSceneCustomStage;
 class CLensOpticsStage;
 class CPostEffectStage;
 class CRainStage;
 class CSnowStage;
 class COmniCameraStage;
-class CDepthReadbackStage;
+class CSceneDepthStage;
 class CMobileCompositionStage;
 class CDebugRenderTargetsStage;
 class CCamera;
@@ -62,7 +63,9 @@ private:
 	std::unique_ptr<CStretchRectPass>      m_PostToFramePass;
 	std::unique_ptr<CStretchRectPass>      m_FrameToFramePass;
 
-	std::unique_ptr<CDepthDownsamplePass>  m_LZSubResPass[3];
 	std::unique_ptr<CStableDownsamplePass> m_HQSubResPass[2];
 	std::unique_ptr<CStretchRectPass>      m_LQSubResPass[2];
+
+private:
+	void ExecuteHDRPostProcessing();
 };

@@ -4,6 +4,7 @@
 
 #include <set>
 #include <atomic>
+#include <string> 
 #include "../../XRenderD3D9/DeviceManager/DeviceFormats.h" // SPixFormat
 #include "../ResFile.h"
 #include "../CommonRender.h" // CBaseResource, SResourceView, SSamplerState
@@ -1347,7 +1348,7 @@ public:
 	static ETEX_Type    TextureTypeForName(const char* str)      { return CImageExtensionHelper::TextureTypeForName(str); }
 
 	static DynArray<std::uint16_t> RenderEnvironmentCMHDR(std::size_t size, const Vec3& Pos);
-
+	static DynArray<std::uint16_t> RenderBillboard(int size, IStatObj* pObj, bool isNormalMap = false);
 public:
 
 #if defined(TEXSTRM_DEFERRED_UPLOAD)

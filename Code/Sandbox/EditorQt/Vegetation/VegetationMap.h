@@ -208,6 +208,7 @@ public:
 	void        ReloadGeometry();
 
 	static void GenerateBillboards(IConsoleCmdArgs*);
+	static void GenerateBillboards2(IConsoleCmdArgs*);
 	bool        SaveBillboardTIFF(const CString& texName, ITexture* pTexture, const char* szPreset, bool bConvertToSRGB);
 
 	bool        IsAreaEmpty(const AABB& bbox);

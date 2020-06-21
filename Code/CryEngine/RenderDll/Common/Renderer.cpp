@@ -1454,6 +1454,11 @@ DynArray<uint16_t> CRenderer::EF_RenderEnvironmentCubeHDR(int size, const Vec3& 
 	return CTexture::RenderEnvironmentCMHDR(size, Pos);
 }
 
+DynArray<uint16_t> CRenderer::EF_RenderBillboard(int size, IStatObj* pObj, bool isNormalMap)
+{
+	return CTexture::RenderBillboard(size, pObj, isNormalMap);
+}
+
 bool CRenderer::WriteTIFToDisk(const void* pData, int width, int height, int bytesPerChannel, int numChannels, bool bFloat, const char* szPreset, const char* szFileName)
 {
 	return WriteTIF(pData, width, height, bytesPerChannel, numChannels, bFloat, szPreset, szFileName);
@@ -3571,6 +3576,7 @@ ITexture* CRenderer::CreateTexture(const char* name, int width, int height, int 
 	cry_sprintf(uniqueName, "%s%d", name, m_TexGenID++);
 	return CTexture::GetOrCreate2DTexture(uniqueName, width, height, numMips, flags, pData, eTF);
 }
+
 
 //////////////////////////////////////////////////////////////////////////
 ITexture* CRenderer::CreateTextureArray(const char* name, ETEX_Type eType, uint32 nWidth, uint32 nHeight, uint32 nArraySize, int nMips, uint32 nFlags, ETEX_Format eTF, int nCustomID)

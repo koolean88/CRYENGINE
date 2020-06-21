@@ -2969,17 +2969,39 @@ inline void SRenderingPassInfo::SetRenderView(IRenderView* pRenderView, const SG
 ////////////////////////////////////////////////////////////////////////////////
 inline SRenderingPassInfo SRenderingPassInfo::CreateBillBoardGenPassRenderingInfo(const SGraphicsPipelineKey graphicsPipelineKey, const CCamera& rCamera, uint32 nRenderingFlags)
 {
-	const CCamera& rCameraToSet = rCamera;
+	static ICVar* pCameraFreeze = gEnv->pConsole->GetCVar("e_CameraFreeze");
+
+	// Update Camera only if e_camerafreeze is not set
+	const CCamera& rCameraToSet = (pCameraFreeze && pCameraFreeze->GetIVal() != 0) ? gEnv->p3DEngine->GetRenderingCamera() : rCamera;
 
 	SRenderingPassInfo passInfo;
 
 	passInfo.SetCamera(rCameraToSet);
 	passInfo.InitRenderingFlags(nRenderingFlags);
-	passInfo.SetRenderView(passInfo.ThreadID(), IRenderView::eViewType_BillboardGen, graphicsPipelineKey);
+	passInfo.SetRenderView(passInfo.ThreadID(), IRenderView::eViewType_Default, graphicsPipelineKey);
 
 	passInfo.m_bAuxWindow = false;
 	passInfo.m_displayContextKey = {};
 	passInfo.m_renderItemSorter.nValue = 0;
+
+	// update general pass zoom factor
+	float fPrevZoomFactor = gEnv->p3DEngine->GetPrevZoomFactor();
+	passInfo.m_nZoomMode = gEnv->p3DEngine->GetZoomMode();
+	passInfo.m_nZoomInProgress = passInfo.m_nZoomMode && fabs(fPrevZoomFactor - passInfo.m_fZoomFactor) > 0.02f;
+
+	int nZoomMode = passInfo.m_nZoomMode;
+	const float fZoomThreshold = 0.7f;
+	if (passInfo.m_fZoomFactor < fZoomThreshold)
+		++nZoomMode;
+	else
+		--nZoomMode;
+
+	// clamp zoom mode into valid range
+	passInfo.m_nZoomMode = clamp_tpl<int>(nZoomMode, 0, 4);
+
+	// store information for next frame in 3DEngine
+	gEnv->p3DEngine->SetPrevZoomFactor(passInfo.m_fZoomFactor);
+	gEnv->p3DEngine->SetZoomMode(passInfo.m_nZoomMode);
 
 	return passInfo;
 }

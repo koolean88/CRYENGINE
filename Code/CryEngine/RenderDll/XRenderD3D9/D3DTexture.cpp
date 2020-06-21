@@ -681,6 +681,127 @@ void SEnvTexture::ReleaseDeviceObjects()
 
 //////////////////////////////////////////////////////////////////////////
 
+
+
+static void DrawObjectForBillboard(CRenderOutputPtr pRenderOutput, int tex_size, int side, uint32 shaderRenderflags, const SGraphicsPipelineKey& graphicsPipelineKey, IStatObj* pObj)
+{
+	auto Pos = Vec3(133.0f, 138.0f, 35.0f);
+
+	CRY_ASSERT(gRenDev->m_pRT->IsMainThread());
+	if (!iSystem)
+		return;
+
+	//const float sCubeVector[6][7] =
+	//{
+	//	{ 1,  0,  0,  0, 0, 1,  -90 }, //posx
+	//	{ -1, 0,  0,  0, 0, 1,  90  }, //negx
+	//	{ 0,  1,  0,  0, 0, -1, 0   }, //posy
+	//	{ 0,  -1, 0,  0, 0, 1,  0   }, //negy
+	//	{ 0,  0,  1,  0, 1, 0,  0   }, //posz
+	//	{ 0,  0,  -1, 0, 1, 0,  0   }, //negz
+	//};
+
+#ifdef DO_RENDERLOG
+	CRenderer* r = gRenDev;
+#endif
+
+	CCamera prevCamera = gEnv->pSystem->GetViewCamera();
+	CCamera tmpCamera = prevCamera;
+
+	//I3DEngine* pEngine = gEnv->p3DEngine;
+
+	//Vec3 vForward = Vec3(sCubeVector[side][0], sCubeVector[side][1], sCubeVector[side][2]);
+	//Vec3 vUp = Vec3(sCubeVector[side][3], sCubeVector[side][4], sCubeVector[side][5]);
+
+	//Matrix33 matRot = Matrix33::CreateOrientation(vForward, vUp, DEG2RAD(sCubeVector[side][6]));
+	//Matrix34 mFinal = Matrix34(matRot, Pos);
+	//tmpCamera.SetMatrix(mFinal);
+	//tmpCamera.SetFrustum(tex_size, tex_size, 90.0f * gf_PI / 180.0f, prevCamera.GetNearPlane(), prevCamera.GetFarPlane()); //90.0f*gf_PI/180.0f
+
+	///
+	const Vec3 vEye(0, 0, 0);
+	const Vec3 vAt(-1, 0, 0);
+	const Vec3 vUp(0, 0, 1);
+
+	float fRadiusHors = pObj->GetRadiusHors();
+	float fRadiusVert = pObj->GetRadiusVert();
+	float fAngle = FAR_TEX_ANGLE * (float)side + 90.f;
+
+	float fGenDist = 18.f; // *max(0.5f, BI.fDistRatio * fCustomDistRatio);
+
+	float fFOV = 0.565f / fGenDist * 200.f * (gf_PI / 180.0f);
+	float fDrawDist = fRadiusVert * fGenDist;
+
+	Matrix33 matRot = Matrix33::CreateOrientation(vAt - vEye, vUp, 0);
+	tmpCamera.SetMatrix(Matrix34(matRot, Vec3(0, 0, 0)));
+	tmpCamera.SetFrustum(tex_size, tex_size, fFOV, max(0.1f, fDrawDist - fRadiusHors), fDrawDist + fRadiusHors);
+
+	///
+#ifdef DO_RENDERLOG
+	if (CRenderer::CV_r_log)
+		r->Logv(".. DrawSceneToCubeSide .. (DrawCubeSide %d)\n", side);
+#endif
+
+	gEnv->pSystem->SetViewCamera(tmpCamera);
+
+	//uint32 nRenderPassFlags = SRenderingPassInfo::VEGETATION | SRenderingPassInfo::BRUSHES | SRenderingPassInfo::ENTITIES;
+	uint32 nRenderPassFlags = SRenderingPassInfo::DEFAULT_FLAGS;
+
+	// TODO: Try to run cube-map generation as recursive pass
+	//auto generalPassInfo = SRenderingPassInfo::CreateGeneralPassRenderingInfo(graphicsPipelineKey, tmpCamera, nRenderPassFlags, false, {});
+	auto generalPassInfo = SRenderingPassInfo::CreateBillBoardGenPassRenderingInfo(graphicsPipelineKey, tmpCamera, nRenderPassFlags);
+	//generalPassInfo.SetRenderView(generalPassInfo.ThreadID(), IRenderView::eViewType_Default, graphicsPipelineKey);
+	CRenderView* pRenderView = generalPassInfo.GetRenderView();
+	pRenderView->AssignRenderOutput(pRenderOutput);
+	pRenderView->SetSkinningDataPools(gcpRendD3D->GetSkinningDataPools());
+
+	CCamera cam = generalPassInfo.GetCamera();
+	pRenderView->SetCameras(&cam, 1);
+	pRenderView->SetPreviousFrameCameras(&cam, 1);
+
+	gcpRendD3D->ResizePipelineAndContext(generalPassInfo.GetGraphicsPipelineKey(), generalPassInfo.GetDisplayContextKey(), tex_size, tex_size);
+	//gcpRendD3D->BeginFrame(generalPassInfo.GetDisplayContextKey(), generalPassInfo.GetGraphicsPipelineKey());
+
+	//gEnv->p3DEngine->RenderWorld(shaderRenderflags, generalPassInfo, __FUNCTION__);
+	///
+	gEnv->pRenderer->EF_StartEf(generalPassInfo);
+
+	Matrix34A matTrans;
+	matTrans.SetIdentity();
+	matTrans.SetTranslation(Vec3(-fDrawDist, 0, 0));
+
+	Matrix34A matRotation;
+	matRotation = matRotation.CreateRotationZ(fAngle * (gf_PI / 180.0f));
+
+	Vec3 vCenter = pObj->GetVegCenter();
+	Matrix34A matCenter;
+	matCenter.SetIdentity();
+	matCenter.SetTranslation(-vCenter);
+	matCenter = matRotation * matCenter;
+	Matrix34 InstMatrix = matTrans * matCenter;
+
+	SRendParams rParams;
+	rParams.pMatrix = &InstMatrix;
+	rParams.lodValue = CLodValue(0);
+	//gEnv->p3DEngine->RenderWorld(shaderRenderflags, generalPassInfo, __FUNCTION__);
+	pObj->Render(rParams, generalPassInfo);
+
+	gEnv->pRenderer->EF_EndEf3D(-1, -1, generalPassInfo, nRenderPassFlags);
+	///
+	//gcpRendD3D->EndFrame();
+
+
+
+	gEnv->pSystem->SetViewCamera(prevCamera);
+
+#ifdef DO_RENDERLOG
+	if (CRenderer::CV_r_log)
+		r->Logv(".. End DrawSceneToCubeSide .. (DrawCubeSide %d)\n", side);
+#endif
+}
+
+
+
 static void DrawSceneToCubeSide(CRenderOutputPtr pRenderOutput, const Vec3& Pos, int tex_size, int side, uint32 shaderRenderflags, const SGraphicsPipelineKey& graphicsPipelineKey)
 {
 	CRY_ASSERT(gRenDev->m_pRT->IsMainThread());
@@ -796,6 +917,160 @@ private:
 	CryVariant<int, float> m_previousValue;
 	ICVar*                 m_pCVar;
 };
+
+DynArray<std::uint16_t> CTexture::RenderBillboard(int size, IStatObj* pObj, bool isNormalMap)
+{
+	DynArray<std::uint16_t> vecData;
+#if CRY_PLATFORM_DESKTOP
+
+	float timeStart = gEnv->pTimer->GetAsyncTime().GetSeconds();
+
+	iLog->Log("Start generating a cubemap (%d x %d) ", size, size);
+
+	CTexture* ptexGenEnvironmentCM = CTexture::GetOrCreate2DTexture("$GenBillboards", size, size, 1, FT_DONT_STREAM | FT_USAGE_RENDERTARGET, nullptr, eTF_R16G16B16A16F);
+	if (!ptexGenEnvironmentCM)
+	{
+		iLog->Log("Failed generating the cubemap texture");
+
+		SAFE_RELEASE(ptexGenEnvironmentCM);
+		return DynArray<std::uint16_t>{};
+	}
+
+	// Disable/set cvars that can affect cube map generation.
+	// aas show normals
+	SCvarOverrideHelper cvarOverrides[]
+	{
+		{ "e_CheckOcclusion",           0      },
+		{ "e_CoverageBuffer",           0      },
+		{ "e_StatObjBufferRenderTasks", 0      },
+		{ "e_ViewDistRatio",            1000.f },
+		{ "e_ViewDistRatioVegetation",  100.f  },
+		{ "e_LodRatio",                 1000.f },
+		{ "e_LodTransitionTime",        0.f    },
+		{ "r_flares",                   0      },
+		{ "r_ssdoHalfRes",              0      }
+		//{ "r_DebugGBuffer",             1      }
+	};
+
+	for (auto& cvarOverride : cvarOverrides)
+		cvarOverride.ApplyValue();
+	// TODO: allow cube-map super-sampling
+	CRenderOutputPtr pRenderOutput = std::make_shared<CRenderOutput>(ptexGenEnvironmentCM, FRT_CLEAR, Clr_Transparent, 1.0f);
+
+	IRenderer::SGraphicsPipelineDescription pipelineDesc;
+	pipelineDesc.type = EGraphicsPipelineType::Billboard;
+	//pipelineDesc.shaderFlags = SHDF_ALLOW_RENDER_DEBUG | SHDF_NO_SHADOWGEN | SHDF_ALLOWPOSTPROCESS | SHDF_ALLOWHDR | SHDF_ZPASS | SHDF_NOASYNC | SHDF_ALLOW_AO;
+	if (!isNormalMap)
+	{
+		pipelineDesc.shaderFlags = SHDF_ALLOW_RENDER_DEBUG | SHDF_NO_SHADOWGEN | SHDF_NOASYNC | SHDF_ALLOWPOSTPROCESS | SHDF_ALLOWHDR | SHDF_ALLOW_AO;
+	}
+	else
+	{
+		pipelineDesc.shaderFlags = SHDF_ALLOW_RENDER_DEBUG | SHDF_NO_SHADOWGEN | SHDF_NOASYNC | SHDF_ALLOWPOSTPROCESS | SHDF_ALLOWHDR | SHDF_ALLOW_AO | SHDF_ZPASS;
+	}
+	SGraphicsPipelineKey pipelineKey = gcpRendD3D->CreateGraphicsPipeline(pipelineDesc);
+
+	vecData.reserve(size * size * FAR_TEX_COUNT * 4);
+	for (int nSide = 0; nSide < FAR_TEX_COUNT; nSide++)
+	{
+		int32 waitFrames = max(0, CRendererCVars::CV_r_CubemapGenerationTimeout);
+		while (waitFrames-- > 0)
+		{
+#if defined(FEATURE_SVO_GI)
+			const bool is_svo_ready_pre_draw = gEnv->p3DEngine->IsSvoReady(true);
+#endif
+
+			gEnv->nMainFrameID++;
+			DrawObjectForBillboard(pRenderOutput, size, nSide, pipelineDesc.shaderFlags, pipelineKey, pObj);
+			//auto tempVec = Vec3(133.0f, 138.0f, 35.0f);
+			//DrawSceneToCubeSide(pRenderOutput, tempVec, size, nSide, pipelineDesc.shaderFlags, pipelineKey);
+
+			SStreamEngineOpenStats streamStats;
+			gEnv->pSystem->GetStreamEngine()->GetStreamingOpenStatistics(streamStats);
+			if (streamStats.nOpenRequestCountByType[eStreamTaskTypeGeometry] == 0
+				&& streamStats.nOpenRequestCountByType[eStreamTaskTypeTexture] == 0
+				&& streamStats.nOpenRequestCountByType[eStreamTaskTypeTerrain] == 0
+#if defined(FEATURE_SVO_GI)
+				&& gEnv->p3DEngine->IsSvoReady(true)
+				&& is_svo_ready_pre_draw
+#endif
+				)
+				break;
+
+			// Update streaming engine
+			CrySleep(10);
+			gEnv->pSystem->GetStreamEngine()->Update(eStreamTaskTypeTerrain | eStreamTaskTypeTexture | eStreamTaskTypeGeometry);
+
+			// Flush and garbage collect
+			gcpRendD3D->ExecuteRenderThreadCommand([&]
+				{
+					GetDeviceObjectFactory().FlushToGPU(false, true);
+				}, ERenderCommandFlags::FlushAndWait);
+		}
+
+		if (waitFrames < 0)
+		{
+			CryWarning(VALIDATOR_MODULE_RENDERER, VALIDATOR_WARNING,
+				"Cubemap generation timeout: some outstanding tasks didn't finish on time, generated cubemap might be incorrect.\n" \
+				"Consider increasing r_CubemapGenerationTimeout");
+		}
+
+		///
+		//uint8* pSrcData = new uint8[size * size];
+		//pRenderOutput->GetColorTarget()->GetData32(0, 0, pSrcData, eTF_R16G16B16A16F);
+		//pGBuffD->GetData32(0, 0, pSrcData, eTF_B8G8R8A8);
+		//gcpRendD3D->SaveTga(pSrcData, FORMAT_8_BIT, size, size, "assets/objects/testSaveFromCode_CubeGenbillbAlb3.tga", false);
+		///
+		bool success = false;
+		gcpRendD3D->ExecuteRenderThreadCommand([&]
+			{
+				CDeviceTexture* pDstDevTex = ptexGenEnvironmentCM->GetDevTexture();
+				//CDeviceTexture* pDstDevTex = pRenderOutput->GetDepthTarget()->GetDevTexture();
+				if (!pDstDevTex)
+				{
+					iLog->Log("Failed generating a cubemap: out of video memory");
+					return;
+				}
+
+				pDstDevTex->DownloadToStagingResource(0, [&](void* pData, uint32 rowPitch, uint32 slicePitch)
+					{
+						const auto* pTarg = reinterpret_cast<const std::uint16_t*>(pData);
+						const uint32 nLineStride = CTexture::TextureDataSize(size, 1, 1, 1, 1, eTF_R16G16B16A16F, eTM_None) / sizeof(*pTarg);
+
+						// Copy vertically flipped image
+						for (uint32 nLine = 0; nLine < size; ++nLine)
+						{
+							const auto src = pTarg + ((size - 1) - nLine) * nLineStride;
+							std::copy(src, src + nLineStride, std::back_inserter(vecData));
+						}
+
+						success = true;
+						return true;
+					});
+
+				// After download clean up temporal memory pools
+				GetDeviceObjectFactory().FlushToGPU(false, true);
+			}, ERenderCommandFlags::FlushAndWait);
+
+		if (!success)
+			return DynArray<std::uint16_t>{};
+	}
+
+	gcpRendD3D->DeleteGraphicsPipeline(pipelineKey);
+	SAFE_RELEASE(ptexGenEnvironmentCM);
+
+	for (auto& cvarOverride : cvarOverrides)
+		cvarOverride.RestoreValue();
+
+//	if (CRenderer::CV_r_HideSunInCubemaps)
+//		gEnv->p3DEngine->SetSkyLightParameters(oldSunDir, oldSunStr, oldSkyKm, oldSkyKr, oldSkyG, oldSunRGB, true);
+
+	float timeUsed = gEnv->pTimer->GetAsyncTime().GetSeconds() - timeStart;
+	iLog->Log("Successfully finished generating a cubemap in %.1f sec", timeUsed);
+#endif
+
+	return vecData;
+}
 
 DynArray<std::uint16_t> CTexture::RenderEnvironmentCMHDR(std::size_t size, const Vec3& Pos)
 {
